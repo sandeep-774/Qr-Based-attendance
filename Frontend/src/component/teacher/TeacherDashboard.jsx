@@ -4,6 +4,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import axios from "axios";
 import LiveAttendanceModal from "./LiveAttendanceModal";
 import DownloadReportModal from "./DownloadReportModal";
+import SettingsModal from "./SettingsModal";
 
 const TeacherDashboard = () => {
   const navigate = useNavigate();
@@ -20,6 +21,13 @@ const TeacherDashboard = () => {
   const [showManualModal, setShowManualModal] = useState(false);
   const [manualSessionId, setManualSessionId] = useState("");
   const [manualStudentId, setManualStudentId] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Stats state
+  const [todaySessions, setTodaySessions] = useState(0);
+  const [activeSession, setActiveSession] = useState(false);
+  const [totalStudents, setTotalStudents] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const storedUser = JSON.parse(localStorage.getItem("user"));
@@ -27,6 +35,7 @@ const TeacherDashboard = () => {
       navigate("/login");
     } else {
       setUser(storedUser);
+      fetchStats(storedUser.teacherId);
     }
   }, [navigate]);
 
@@ -39,6 +48,47 @@ const TeacherDashboard = () => {
 
     return () => clearInterval(timer);
   }, [timeLeft]);
+
+  // Fetch dashboard stats
+
+const fetchStats = async (teacherId) => {
+  try {
+    setLoading(true);
+
+    // ✅ Today's sessions (real)
+    const todayRes = await axios.get(
+      `http://localhost:8080/api/teacher/today-sessions/${teacherId}`
+    );
+    setTodaySessions(todayRes.data?.count ?? 0);
+
+    // ✅ Active session (real boolean)
+    const activeRes = await axios.get(
+      `http://localhost:8080/api/teacher/active-session/${teacherId}`
+    );
+
+    // Fix 1: Check if activeRes.data has a session
+    const isActive = activeRes.data !== null && activeRes.data !== 0;
+    setActiveSession(isActive);
+
+    // Fix 2: Check if active session exists before calling count API
+    if (isActive) {
+      const countRes = await axios.get(
+        `http://localhost:8080/api/teacher/live-session-students/${teacherId}`
+      );
+      setTotalStudents(countRes.data ?? 0);
+    } else {
+      setTotalStudents(0);
+    }
+
+  } catch (err) {
+    console.error("Error fetching stats:", err);
+    setTodaySessions(0);
+    setActiveSession(false);
+    setTotalStudents(0);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const formatTime = (sec) => {
     const m = Math.floor(sec / 60);
@@ -75,10 +125,15 @@ const TeacherDashboard = () => {
       );
 
       setTimeLeft(30 * 60);
+
+      // Refresh stats after creating session
+      fetchStats(user.teacherId);
     } catch (err) {
       console.error(err);
+      alert(err.response?.data || "Error creating session");
     }
   };
+
   const markManualAttendance = async () => {
     if (!manualSessionId || !manualStudentId) {
       alert("Fill all fields");
@@ -105,7 +160,6 @@ const TeacherDashboard = () => {
     }
   };
 
-
   if (!user) return null;
 
   return (
@@ -131,24 +185,41 @@ const TeacherDashboard = () => {
           </button>
         </div>
 
-        {/* QUICK STATS */}
+        {/* QUICK STATS - REAL DATA */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-
           <div className="bg-white p-4 rounded-xl shadow text-center">
             <p className="text-gray-500 text-sm">Today's Sessions</p>
-            <h2 className="text-2xl font-bold">2</h2>
+            {loading ? (
+              <div className="animate-pulse h-8 w-16 bg-gray-200 rounded mx-auto mt-1"></div>
+            ) : (
+              <h2 className="text-2xl font-bold">{todaySessions}</h2>
+            )}
           </div>
 
           <div className="bg-white p-4 rounded-xl shadow text-center">
-            <p className="text-gray-500 text-sm">Active Session</p>
-            <h2 className="text-green-600 font-bold">Live</h2>
-          </div>
+  <p className="text-gray-500 text-sm">Active Session</p>
+
+  {loading ? (
+    <div className="animate-pulse h-8 w-24 bg-gray-200 rounded mx-auto mt-1"></div>
+  ) : activeSession ? (
+    <h2 className="text-green-600 font-bold">
+      Live Session
+    </h2>
+  ) : (
+    <h2 className="text-red-500 font-bold">
+      No Active Session
+    </h2>
+  )}
+</div>
 
           <div className="bg-white p-4 rounded-xl shadow text-center">
             <p className="text-gray-500 text-sm">Total Students</p>
-            <h2 className="text-2xl font-bold">120</h2>
+            {loading ? (
+              <div className="animate-pulse h-8 w-16 bg-gray-200 rounded mx-auto mt-1"></div>
+            ) : (
+              <h2 className="text-2xl font-bold">{totalStudents}</h2>
+            )}
           </div>
-
         </div>
 
         {/* MAIN ACTIONS */}
@@ -200,7 +271,10 @@ const TeacherDashboard = () => {
           </div>
 
           {/* Settings */}
-          <div className="bg-white border p-6 rounded-2xl shadow hover:shadow-md transition cursor-pointer">
+          <div
+            onClick={() => setShowSettings(true)}
+            className="bg-white border p-6 rounded-2xl shadow hover:shadow-md transition cursor-pointer"
+          >
             <h2 className="text-lg font-semibold">⚙️ Settings</h2>
             <p className="text-gray-500 text-sm">Profile & preferences</p>
           </div>
@@ -209,18 +283,15 @@ const TeacherDashboard = () => {
 
         {/* ACTIVE SESSION PANEL */}
 
-
       </div>
 
-      {/* MODAL */}
+      {/* MODALS - same as before */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex justify-center items-center">
           <div className="bg-white w-[380px] p-6 rounded-2xl shadow-lg relative">
-
             <h2 className="text-lg font-bold mb-4 text-center">
               Start Attendance Session
             </h2>
-
             <input
               type="text"
               placeholder="Lecture Name"
@@ -228,7 +299,6 @@ const TeacherDashboard = () => {
               value={lectureName}
               onChange={(e) => setLectureName(e.target.value)}
             />
-
             <input
               type="text"
               placeholder="Lecture Code"
@@ -236,7 +306,6 @@ const TeacherDashboard = () => {
               value={lectureCode}
               onChange={(e) => setLectureCode(e.target.value)}
             />
-
             <select
               className="w-full border p-2 rounded mb-4"
               value={year}
@@ -248,7 +317,6 @@ const TeacherDashboard = () => {
               <option value="3rd">3rd Year</option>
               <option value="4th">4th Year</option>
             </select>
-
             <button
               onClick={generateQR}
               className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700"
@@ -258,17 +326,16 @@ const TeacherDashboard = () => {
             {qrData && (
               <div className="mt-6 bg-white p-6 rounded-2xl shadow flex flex-col items-center">
                 <QRCodeCanvas value={qrData} size={180} />
-
                 <p className="mt-3 font-semibold text-indigo-600">
                   {timeLeft > 0
                     ? `Session ends in ${formatTime(timeLeft)}`
                     : "Session expired ❌"}
                 </p>
-
                 <button
                   onClick={() => {
                     setQrData("");
                     setTimeLeft(0);
+                    fetchStats(user.teacherId);
                   }}
                   className="mt-3 text-sm text-red-500"
                 >
@@ -285,26 +352,27 @@ const TeacherDashboard = () => {
           </div>
         </div>
       )}
+
       {showLiveModal && (
         <LiveAttendanceModal
           user={user}
           onClose={() => setShowLiveModal(false)}
         />
       )}
+
       {showDownloadModal && (
         <DownloadReportModal
           user={user}
           onClose={() => setShowDownloadModal(false)}
         />
       )}
+
       {showManualModal && (
         <div className="fixed inset-0 bg-black/40 flex justify-center items-center">
           <div className="bg-white w-[350px] p-6 rounded-2xl shadow-lg">
-
             <h2 className="text-lg font-bold mb-4 text-center">
               Manual Attendance
             </h2>
-
             <input
               type="text"
               placeholder="Session ID"
@@ -312,7 +380,6 @@ const TeacherDashboard = () => {
               value={manualSessionId}
               onChange={(e) => setManualSessionId(e.target.value)}
             />
-
             <input
               type="text"
               placeholder="Student ID / Roll No"
@@ -320,23 +387,27 @@ const TeacherDashboard = () => {
               value={manualStudentId}
               onChange={(e) => setManualStudentId(e.target.value)}
             />
-
             <button
               onClick={markManualAttendance}
               className="w-full bg-green-600 text-white py-2 rounded mb-3 cursor-pointer"
             >
               Mark Attendance
             </button>
-
             <button
               onClick={() => setShowManualModal(false)}
               className="w-full bg-gray-400 text-white py-2 rounded"
             >
               Cancel
             </button>
-
           </div>
         </div>
+      )}
+
+      {showSettings && (
+        <SettingsModal
+          user={user}
+          onClose={() => setShowSettings(false)}
+        />
       )}
     </div>
   );

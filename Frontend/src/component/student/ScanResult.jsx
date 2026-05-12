@@ -55,7 +55,7 @@ const ScanResult = () => {
 
         <button
           onClick={markAttendance}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-xl shadow-md transition"
+          className="cursor-pointer w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-xl shadow-md transition"
         >
           Mark Attendance
         </button>
